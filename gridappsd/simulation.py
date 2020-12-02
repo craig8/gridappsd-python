@@ -11,7 +11,6 @@ from . import topics as t
 from .topics import simulation_input_topic
 
 _log = logging.getLogger(__name__)
-_log.setLevel(logging.DEBUG)
 
 
 class SimulationFailedToStartError(Exception):
@@ -87,11 +86,9 @@ class Simulation(object):
         self._gapps.subscribe(t.simulation_output_topic(self.simulation_id), self.__onmeasurement)
         self._gapps.subscribe(t.platform_log_topic(), self.__on_platformlog)
 
-        _log.debug("Running onstart events")
+        _log.debug(f"Running onstart events for simulation id: {self.simulation_id}")
         for p in self.__on_start:
             self.__event_queue.put((p, self))
-            # p(self)
-        _log.debug(f"Started simulation: {self.simulation_id}")
 
     def pause(self):
         """ Pause simulation"""
@@ -157,12 +154,13 @@ class Simulation(object):
                     else:
                         callit[0](callit[1])
                 except BaseException:
-                    _log.error(str(traceback.format_exc()))
+                    _log.error(f"Error from queue traceback:\n {str(traceback.format_exc())}")
 
             if self._running_or_paused:
                 times += 1
                 if times % 500 == 0:
-                    # _log.debug(f"{times}, {self._running_or_paused}, {self._simulation_complete}")
+                    # Attempt to send something just to make sure we can still do so
+                    # Break out of while loop if we can't
                     self._gapps.send("/topic/connected", "data")
                     if not self._gapps.connected:
                         break
@@ -173,7 +171,7 @@ class Simulation(object):
 
         # send a little time before exiting to make sure the queue is empty
         time.sleep(10)
-        _log.debug("Ending run_loop")
+        _log.debug(f"Ending run_loop for simulation id: {self.simulation_id}")
 
     def resume_pause_at(self, pause_in):
         """ Resume the simulation and have it automatically pause after specified amount of seconds later.
@@ -266,15 +264,13 @@ class Simulation(object):
             if log_message == "Simulation {} has finished.".format(self.simulation_id):
                 for p in self.__on_simulation_complete_callbacks:
                     self.__event_queue.put((p, self))
-                    #p(self)
                 self._running_or_paused = False
                 self._simulation_complete = True
-                _log.debug("Simulation completed")
+                _log.debug(f"Simulation completed ({self.simulation_id})")
             elif log_message.startswith("incrementing to "):
                 timestep = log_message[len("incrementing to "):]
                 for p in self.__on_next_timestep_callbacks:
                     self.__event_queue.put((p, (self, int(timestep))))
-                    # p(self, int(timestep))
 
     def __onmeasurement(self, headers, message):
         """ Call the measurement callbacks
@@ -288,4 +284,3 @@ class Simulation(object):
         measurements = message['message']['measurements']
         for p in self.__filterable_measurement_callback_set:
             self.__event_queue.put((p[0], (self, timestamp, measurements)))
-            #p[0](self, timestamp, measurements)
