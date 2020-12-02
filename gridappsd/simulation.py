@@ -1,12 +1,17 @@
 import time
+import traceback
 from copy import deepcopy
 import json
 import logging
+import queue
+from queue import Queue
+from typing import Sequence
 
 from . import topics as t
 from .topics import simulation_input_topic
 
 _log = logging.getLogger(__name__)
+_log.setLevel(logging.DEBUG)
 
 
 class SimulationFailedToStartError(Exception):
@@ -31,6 +36,9 @@ class Simulation(object):
         self._gapps = gapps
         self._run_config = deepcopy(run_config)
         self._running_or_paused = False
+        self._running = False
+        self._paused = False
+        self._simulation_complete = False
 
         # Will be populated when the simulation is first started.
         self.simulation_id = None
@@ -49,6 +57,16 @@ class Simulation(object):
         self._device_measurement_filter = {}
 
         self.__filterable_measurement_callback_set = set()
+        self.__event_queue = Queue()
+        _log.debug("Create Simulation Object")
+
+    @property
+    def running(self) -> bool:
+        return self._running
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
 
     def start_simulation(self):
         """ Start the configured simulation by calling the REQUEST_SIMULATION endpoint.
@@ -60,6 +78,7 @@ class Simulation(object):
             raise SimulationFailedToStartError(message)
 
         self._running_or_paused = True
+        self._running = True
         self.simulation_id = resp['simulationId']
 
         # Subscribe to the different components necessary to run and receive
@@ -68,8 +87,11 @@ class Simulation(object):
         self._gapps.subscribe(t.simulation_output_topic(self.simulation_id), self.__onmeasurement)
         self._gapps.subscribe(t.platform_log_topic(), self.__on_platformlog)
 
+        _log.debug("Running onstart events")
         for p in self.__on_start:
-            p(self)
+            self.__event_queue.put((p, self))
+            # p(self)
+        _log.debug(f"Started simulation: {self.simulation_id}")
 
     def pause(self):
         """ Pause simulation"""
@@ -77,6 +99,8 @@ class Simulation(object):
         command = dict(command="pause")
         self._gapps.send(simulation_input_topic(self.simulation_id), json.dumps(command))
         self._running_or_paused = True
+        self._running = False
+        self._paused = True
 
     def stop(self):
         """ Stop the simulation"""
@@ -84,6 +108,9 @@ class Simulation(object):
         command = dict(command="stop")
         self._gapps.send(simulation_input_topic(self.simulation_id), json.dumps(command))
         self._running_or_paused = True
+        self._running = False
+        self._paused = False
+        self._simulation_complete = True
 
     def resume(self):
         """ Resume the simulation"""
@@ -91,6 +118,8 @@ class Simulation(object):
         command = dict(command="resume")
         self._gapps.send(simulation_input_topic(self.simulation_id), json.dumps(command))
         self._running_or_paused = True
+        self._running = True
+        self._paused = False
 
     def run_loop(self):
         """ Loop around the running of the simulation itself.
@@ -112,8 +141,39 @@ class Simulation(object):
             _log.debug("Running simulation in loop until simulation is done.")
             self.start_simulation()
 
-        while self._running_or_paused:
-            time.sleep(0.01)
+        times = 0
+
+        while not self._simulation_complete:
+            try:
+                callit = self.__event_queue.get_nowait()
+            except queue.Empty:
+                pass
+            else:
+                try:
+                    # expected format of (fn, (arg1, arg2))
+                    #                   or (fn, arg1)
+                    if isinstance(callit[1], Sequence):
+                        callit[0](*callit[1])
+                    else:
+                        callit[0](callit[1])
+                except BaseException:
+                    _log.error(str(traceback.format_exc()))
+
+            if self._running_or_paused:
+                times += 1
+                if times % 500 == 0:
+                    # _log.debug(f"{times}, {self._running_or_paused}, {self._simulation_complete}")
+                    self._gapps.send("/topic/connected", "data")
+                    if not self._gapps.connected:
+                        break
+                time.sleep(0.01)
+            else:
+                _log.debug("Exiting run loop")
+                break
+
+        # send a little time before exiting to make sure the queue is empty
+        time.sleep(10)
+        _log.debug("Ending run_loop")
 
     def resume_pause_at(self, pause_in):
         """ Resume the simulation and have it automatically pause after specified amount of seconds later.
@@ -124,6 +184,7 @@ class Simulation(object):
         command = dict(command="resumePauseAt", input=dict(pauseIn=pause_in))
         self._gapps.send(simulation_input_topic(self.simulation_id), json.dumps(command))
         self._running_or_paused = True
+
 
     def add_onmesurement_callback(self, callback, device_filter=()):
         """ registers an onmeasurment callback to be called when measurements have come through.
@@ -204,13 +265,16 @@ class Simulation(object):
             # if this is the last timestamp then call the finished callbacks
             if log_message == "Simulation {} has finished.".format(self.simulation_id):
                 for p in self.__on_simulation_complete_callbacks:
-                    p(self)
+                    self.__event_queue.put((p, self))
+                    #p(self)
                 self._running_or_paused = False
+                self._simulation_complete = True
                 _log.debug("Simulation completed")
             elif log_message.startswith("incrementing to "):
                 timestep = log_message[len("incrementing to "):]
                 for p in self.__on_next_timestep_callbacks:
-                    p(self, int(timestep))
+                    self.__event_queue.put((p, (self, int(timestep))))
+                    # p(self, int(timestep))
 
     def __onmeasurement(self, headers, message):
         """ Call the measurement callbacks
@@ -223,4 +287,5 @@ class Simulation(object):
         timestamp = message['message']['timestamp']
         measurements = message['message']['measurements']
         for p in self.__filterable_measurement_callback_set:
-            p[0](self, timestamp, measurements)
+            self.__event_queue.put((p[0], (self, timestamp, measurements)))
+            #p[0](self, timestamp, measurements)

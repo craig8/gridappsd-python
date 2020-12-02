@@ -2,10 +2,12 @@ import os
 
 import pytest
 
-from gridappsd import GridAPPSD
+from gridappsd import GridAPPSD, GOSS
 from gridappsd.docker_handler import run_dependency_containers, run_gridappsd_container, Containers
 
-STOP_CONTAINER_AFTER_TEST = os.environ.get('GRIDAPPSD_STOP_CONTAINERS_AFTER_TESTS', False)
+# True by default so that the containers don't hang around after tests are done.
+STOP_CONTAINER_AFTER_TEST = os.environ.get('GRIDAPPSD_STOP_CONTAINERS_AFTER_TESTS', True)
+
 
 @pytest.fixture(scope="module")
 def docker_dependencies():
@@ -18,7 +20,7 @@ def docker_dependencies():
 
 
 @pytest.fixture
-def gridappsd_client(docker_dependencies):
+def gridappsd_client(docker_dependencies) -> GridAPPSD:
     with run_gridappsd_container(stop_after=STOP_CONTAINER_AFTER_TEST):
         gappsd = GridAPPSD()
         gappsd.connect()
@@ -27,3 +29,15 @@ def gridappsd_client(docker_dependencies):
         yield gappsd
 
         gappsd.disconnect()
+
+
+@pytest.fixture
+def goss_client(docker_dependencies) -> GOSS:
+    with run_gridappsd_container(stop_after=STOP_CONTAINER_AFTER_TEST):
+        goss = GOSS()
+        goss.connect()
+        assert goss.connected
+
+        yield goss
+
+        goss.disconnect()
