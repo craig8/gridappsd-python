@@ -26,8 +26,8 @@ do
   poetry build
   # export deps, with updated path deps
   mkdir -p info
-  poetry export -f requirements.txt --output ./info/requirements.txt --without-hashes --with-credentials
-  sed -i$SEP'' "s/ @ .*;/==$VERSION;/" "./info/requirements.txt"
+  #poetry export -f requirements.txt --output ./info/requirements.txt --without-hashes --with-credentials
+  #sed -i$SEP'' "s/ @ .*;/==$VERSION;/" "./info/requirements.txt"
   ls -altr ./dist/
 done
 
@@ -35,8 +35,8 @@ done
 if [ "$(uname)" = "Darwin" ]; then export FLAG=" "; else FLAG="-u "; fi
 echo "=========="
 mkdir -p "${DIR}/../info"
-cp $FLAG "${DIR}/../CHANGELOG.md" "${DIR}/../info/"
-cp $FLAG "${DIR}/../VERSION" "${DIR}/../info/"
+#cp $FLAG "${DIR}/../CHANGELOG.md" "${DIR}/../info/"
+#cp $FLAG "${DIR}/../VERSION" "${DIR}/../info/"
 echo "=========="
 # copying each wheel to root folder dist
 mkdir -p "${DIR}/../dist"
