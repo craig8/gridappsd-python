@@ -1,0 +1,90 @@
+name: Release Development Artifacts
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v45
+        with:
+          files: |
+            **.py
+            
+      - name: Set up Python
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Poetry
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: snok/install-poetry@v1.4.1
+        with:
+          poetry-version: latest
+          virtualenvs-in-project: true
+          installer-parallel: true
+          
+      - name: Bump version
+        if: steps.changed-files.outputs.any_changed == 'true'
+        id: bump-version
+        run: |
+          echo "Bumping version..."
+          ./scripts/run_on_each.sh poetry version patch
+          echo "Version bumped to $(poetry version -s)"
+          
+      - name: Install dependencies
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: ./scripts/poetry_install.sh
+
+      - name: Build project
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: ./scripts/poetry_build.sh
+          
+      - name: Commit bumped version
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          git config --global user.name 'gridappsd[bot]'
+          git config --global user.email 'gridappsd[bot]@users.noreply.github.com'
+          git commit -am "Bump version to $(poetry version -s)"
+          git push origin develop
+
+      - name: Create Release
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: ncipollo/release-action@v1.15.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag: v$(poetry version -s)
+          name: Release v$(poetry version -s)
+          draft: false
+          prerelease: true
+          generateReleaseNotes: true
+          commit: ${{ github.ref }}
+          artifacts: "dist/*.gz,dist/*.whl"
+          artifactErrorsFailBuild: true
+      - name: Publish to PyPI
+        id: publish-to-pypi
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          
+          # This is needed, because the poetry publish will fail at the top level of the project
+          # so ./scripts/run_on_each.sh fails for that.
+          echo "POETRY_PUBLISH_OPTIONS=''" >> $GITHUB_ENV
+          cd gridappsd-python-lib
+          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+          poetry publish
+
+          cd ../gridappsd-field-bus-lib
+          poetry config pypi-token.pypi ${{ secrets.PYPI_TOKEN }}
+          poetry publish
