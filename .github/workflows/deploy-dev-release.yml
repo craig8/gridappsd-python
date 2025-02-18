@@ -54,7 +54,7 @@ jobs:
         id: bump-version
         run: |
           echo "Bumping version..."
-          ./scripts/run_on_each.sh poetry version patch
+          ./scripts/run_on_each.sh poetry version prerelease
           echo "Version bumped to $(poetry version -s)"
           
       - name: Install dependencies
