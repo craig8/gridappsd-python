@@ -9,7 +9,8 @@ on:
       force:
         description: 'Force deploy'
         required: false
-        default: 'false'
+        default: false
+        type: boolean
 jobs:
   check-changes:
     runs-on: ubuntu-latest
