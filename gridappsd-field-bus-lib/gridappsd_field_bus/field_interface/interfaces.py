@@ -8,6 +8,7 @@ import gridappsd.topics as t
 import logging
 from os import PathLike
 from pathlib import Path
+import sys
 from typing import Dict, List, Optional, Union, Any
 
 import yaml
@@ -207,7 +208,12 @@ class MessageBusFactory(ABC):
         except AttributeError:
             module_name, class_name = config.connection_type.rsplit('.', 1)
 
-        module = importlib.import_module(module_name)
+        if module_name in sys.modules:
+            module = sys.modules[module_name]
+            module = importlib.reload(module)
+        else:
+            module = importlib.import_module(module_name)
+
         bus_class = getattr(module, class_name)
         return bus_class(config)
 

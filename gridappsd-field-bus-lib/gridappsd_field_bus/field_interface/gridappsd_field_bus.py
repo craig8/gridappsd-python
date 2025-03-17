@@ -23,13 +23,15 @@ class GridAPPSDMessageBus(FieldMessageBus):
         """
         Is this object connected to the message bus
         """
-        pass
+        assert self.gridappsd_obj is not None, "Connect must be called before is_connected"
+        return self.gridappsd_obj.is_connected
 
     def connect(self):
         """
         Connect to the concrete message bus that implements this interface.
         """
-        self.gridappsd_obj = GridAPPSD()
+        self.gridappsd_obj = GridAPPSD(address=self._address, username=self._user, password=self._password)
+        
 
     def subscribe(self, topic, callback):
         if self.gridappsd_obj is not None:

@@ -21,14 +21,16 @@ class TestMessageBusFactory(unittest.TestCase):
             id="test_bus",
             connection_type=ConnectionType.CONNECTION_TYPE_GRIDAPPSD,
             connection_args={"GRIDAPPSD_USER": "artemis", "GRIDAPPSD_PASSWORD": "aretemis",
-                             "GRIDAPPSD_PORT": 61613, "GRIDAPPSD_ADDRESS": "localhost"}
+                             "GRIDAPPSD_PORT": 61616, "GRIDAPPSD_ADDRESS": "localhost"}
         )
 
     def test_create_message_bus(self):
         message_bus = MessageBusFactory.create(self.config)
+        message_bus.connect()
         self.assertIsNotNone(message_bus)
         self.assertEqual(message_bus.id, "test_bus")
         self.assertEqual(message_bus.is_ot_bus, False)
+        self.assertTrue(message_bus.is_connected())
 
 if __name__ == '__main__':
     unittest.main()

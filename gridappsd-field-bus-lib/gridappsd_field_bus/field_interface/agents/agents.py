@@ -62,6 +62,8 @@ class DistributedAgent:
         self.context = None
 
         # TODO: Change params and connection to local connection
+        if cim_profile is None:
+            cim_profile = CIM_PROFILE
         self.params = ConnectionParameters(cim_profile=CIM_PROFILE, iec61970_301=IEC61970_301)
 
         self.connection = GridappsdConnection(self.params)
@@ -81,26 +83,22 @@ class DistributedAgent:
         if upstream_message_bus_def is not None:
             if upstream_message_bus_def.is_ot_bus:
                 self.upstream_message_bus = MessageBusFactory.create(upstream_message_bus_def)
-        #            else:
-        #                self.upstream_message_bus = VolttronMessageBus(upstream_message_bus_def)
-
+      
         if downstream_message_bus_def is not None:
             if downstream_message_bus_def.is_ot_bus:
                 self.downstream_message_bus = MessageBusFactory.create(downstream_message_bus_def)
 
+
         if self.downstream_message_bus is None and self.upstream_message_bus is None:
             raise ValueError("Must have at least a downstream and/or upstream message bus specified")
 
-        self._connect()
-
-    def _connect(self):
 
         if self.upstream_message_bus is not None:
             self.upstream_message_bus.connect()
+            assert self.upstream_message_bus.is_connected(), "Can't connect to upstream!"
         if self.downstream_message_bus is not None:
             self.downstream_message_bus.connect()
-        if self.downstream_message_bus is None and self.upstream_message_bus is None:
-            raise ValueError("Either upstream or downstream bus must be specified!")
+            assert self.downstream_message_bus.is_connected(), "Can't connect to downstream!"
 
         if ('context_manager' not in self.app_id):
             self.agent_id = "da_" + self.app_id + "_" + self.downstream_message_bus.id
@@ -242,8 +240,7 @@ class SubstationAgent(DistributedAgent):
                          substation_dict, simulation_id)
         self.substation_area = None
         self.downstream_message_bus_def = downstream_message_bus_def
-
-        self._connect()
+        
 
         if self.agent_area_dict is not None:
             substation = cim.Substation(mRID=self.downstream_message_bus_def.id)
@@ -264,8 +261,6 @@ class FeederAgent(DistributedAgent):
                          feeder_dict, simulation_id)
         self.feeder_area = None
         self.downstream_message_bus_def = downstream_message_bus_def
-
-        self._connect()
 
         if self.agent_area_dict is not None:
             feeder = cim.FeederArea(mRID=self.downstream_message_bus_def.id)
@@ -288,8 +283,6 @@ class SwitchAreaAgent(DistributedAgent):
         self.switch_area = None
         self.downstream_message_bus_def = downstream_message_bus_def
 
-        self._connect()
-
         if self.agent_area_dict is not None:
             container = cim.SwitchArea(mRID=self.downstream_message_bus_def.id)
             self.switch_area = DistributedArea(container=container,
@@ -310,8 +303,6 @@ class SecondaryAreaAgent(DistributedAgent):
                          secondary_area_dict, simulation_id)
         self.secondary_area = None
         self.downstream_message_bus_def = downstream_message_bus_def
-
-        self._connect()
 
         if self.agent_area_dict is not None:
             if len(self.agent_area_dict['AddressableEquipment']) == 0:
